@@ -16,7 +16,7 @@ session.sql("USE WAREHOUSE TSHO_WH_XL").collect()
 # ---------------------------------------------------------------------------
 @st.cache_data(ttl=600)
 def load_data() -> pd.DataFrame:
-    """Load data from the MONTHLY_SALES table."""
+    """Load data from the SIS_DASHBOARD_DEMO table."""
     df = session.sql(
         """
         SELECT
@@ -26,7 +26,7 @@ def load_data() -> pd.DataFrame:
             SALES_AMOUNT,
             UNITS_SOLD,
             CUSTOMER_COUNT
-        FROM TSHO_DB.TFT_DEMO_2026.MONTHLY_SALES
+        FROM TSHO_DB.TSHO_SCHEMA.SIS_DASHBOARD_DEMO
         ORDER BY SALE_DATE
         """
     ).to_pandas()

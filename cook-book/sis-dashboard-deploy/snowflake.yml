@@ -5,7 +5,7 @@ entities:
     identifier:
       name: MONTHLY_SALES_DASHBOARD
       database: TSHO_DB
-      schema: TFT_DEMO_2026
+      schema: TSHO_SCHEMA
     query_warehouse: TSHO_WH_XL
     external_access_integrations:
       - PYPI_ACCESS_INTEGRATION
