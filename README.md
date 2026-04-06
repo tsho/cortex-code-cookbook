@@ -7,10 +7,14 @@ A collection of cookbook-style recipes for [Cortex Code](https://docs.snowflake.
 ```
 cortex-code-cookbook/
 ├── cookbook/
+│   ├── ai/                          # AI recipes
+│   ├── data-engineering/            # Data engineering recipes
 │   ├── ml/
 │   │   └── forecast-sales/          # Recipe: Sales forecasting with SNOWFLAKE.ML.FORECAST
-│   └── sis/
-│       └── sis-dashboard-deploy/    # Recipe: Streamlit-in-Snowflake sales dashboard
+│   ├── sis/
+│   │   └── sis-dashboard-deploy/    # Recipe: Streamlit-in-Snowflake sales dashboard
+│   └── sql/
+│       └── advanced-analytics-window-functions/  # Recipe: Window functions for analytics
 ├── AGENTS.md                        # Agent notes and lessons learned
 ├── LICENSE                          # Apache License 2.0
 ├── pyproject.toml                   # Project config, ruff lint rules
@@ -19,10 +23,11 @@ cortex-code-cookbook/
 
 ## Recipes
 
-| Recipe | Description |
-|---|---|
-| [forecast-sales](cookbook/ml/forecast-sales/) | Forecast monthly sales with `SNOWFLAKE.ML.FORECAST` using Cortex Code prompts |
-| [sis-dashboard-deploy](cookbook/sis/sis-dashboard-deploy/) | Deploy a monthly sales dashboard to Snowflake as a Streamlit-in-Snowflake (SiS) app |
+| Category | Recipe | Description |
+|---|---|---|
+| ml | [forecast-sales](cookbook/ml/forecast-sales/) | Forecast monthly sales with `SNOWFLAKE.ML.FORECAST` using Cortex Code prompts |
+| sis | [sis-dashboard-deploy](cookbook/sis/sis-dashboard-deploy/) | Deploy a monthly sales dashboard to Snowflake as a Streamlit-in-Snowflake (SiS) app |
+| sql | [advanced-analytics-window-functions](cookbook/sql/advanced-analytics-window-functions/) | Window functions for moving averages, rankings, and period-over-period analysis |
 
 ## Prerequisites
 
