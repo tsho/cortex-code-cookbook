@@ -22,8 +22,14 @@ type ServerEvent =
   | { type: "text-delta"; text: string }
   | { type: "tool-use"; id: string; name: string; input: Record<string, unknown> }
   | { type: "tool-result"; tool_use_id: string; content: string }
-  | { type: "permission-check"; toolName: string; input: Record<string, unknown>; toolUseId?: string }
+  | { type: "permission-request"; id: string; toolName: string; input: Record<string, unknown> }
+  | { type: "permission-resolved"; id: string; allowed: boolean }
   | { type: "error"; message: string };
+
+export type PermissionState =
+  | { status: "pending"; id: string; toolName: string; input: Record<string, unknown> }
+  | { status: "allowed" }
+  | { status: "denied" };
 
 export type ToolCallPart = {
   type: "tool-call";
@@ -31,8 +37,16 @@ export type ToolCallPart = {
   toolName: string;
   args: Record<string, unknown>;
   result?: string;
-  permitted?: boolean;
+  permission?: PermissionState;
 };
+
+async function respondPermission(id: string, allow: boolean) {
+  await fetch(`/api/permission/${id}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ allow }),
+  });
+}
 
 const CortexAgentAdapter: ChatModelAdapter = {
   async *run({ messages, abortSignal }) {
@@ -57,11 +71,12 @@ const CortexAgentAdapter: ChatModelAdapter = {
     const toolCalls = new Map<string, ToolCallPart>();
     const toolOrder: string[] = [];
 
+    // permission id → tool call id (most recent tool when request arrives)
+    const permToTool = new Map<string, string>();
+
     const buildContent = () => {
       const parts: (ToolCallPart | { type: "text"; text: string })[] = [];
-      for (const id of toolOrder) {
-        parts.push(toolCalls.get(id)!);
-      }
+      for (const id of toolOrder) parts.push(toolCalls.get(id)!);
       if (text) parts.push({ type: "text", text });
       return parts;
     };
@@ -81,6 +96,7 @@ const CortexAgentAdapter: ChatModelAdapter = {
         if (event.type === "text-delta") {
           text += (text ? "\n\n" : "") + event.text;
           yield { content: buildContent() as never };
+
         } else if (event.type === "tool-use") {
           toolCalls.set(event.id, {
             type: "tool-call",
@@ -90,24 +106,39 @@ const CortexAgentAdapter: ChatModelAdapter = {
           });
           toolOrder.push(event.id);
           yield { content: buildContent() as never };
+
         } else if (event.type === "tool-result") {
           const call = toolCalls.get(event.tool_use_id);
           if (call) call.result = event.content;
           yield { content: buildContent() as never };
-        } else if (event.type === "permission-check") {
-          // Match by toolUseId if available, otherwise by most recent unpermitted call
-          if (event.toolUseId && toolCalls.has(event.toolUseId)) {
-            toolCalls.get(event.toolUseId)!.permitted = true;
-          } else {
-            for (let i = toolOrder.length - 1; i >= 0; i--) {
-              const call = toolCalls.get(toolOrder[i])!;
-              if (!call.permitted) {
-                call.permitted = true;
-                break;
-              }
-            }
+
+        } else if (event.type === "permission-request") {
+          // Associate with the most recent tool call that has no permission yet
+          let targetId = toolOrder[toolOrder.length - 1];
+          for (let i = toolOrder.length - 1; i >= 0; i--) {
+            if (!toolCalls.get(toolOrder[i])!.permission) { targetId = toolOrder[i]; break; }
+          }
+          permToTool.set(event.id, targetId);
+
+          const call = toolCalls.get(targetId);
+          if (call) {
+            call.permission = {
+              status: "pending",
+              id: event.id,
+              toolName: event.toolName,
+              input: event.input,
+            };
           }
           yield { content: buildContent() as never };
+
+        } else if (event.type === "permission-resolved") {
+          const toolId = permToTool.get(event.id);
+          if (toolId) {
+            const call = toolCalls.get(toolId);
+            if (call) call.permission = { status: event.allowed ? "allowed" : "denied" };
+          }
+          yield { content: buildContent() as never };
+
         } else if (event.type === "error") {
           throw new Error(event.message);
         }
@@ -116,18 +147,14 @@ const CortexAgentAdapter: ChatModelAdapter = {
   },
 };
 
+export { respondPermission };
+
 export function App() {
   const runtime = useLocalRuntime(CortexAgentAdapter);
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          height: "100dvh",
-        }}
-      >
+      <div style={{ display: "flex", flexDirection: "column", height: "100dvh" }}>
         <header
           style={{
             display: "flex",
@@ -139,16 +166,8 @@ export function App() {
           }}
         >
           <img src={snowflakeMark} alt="" width={22} height={22} />
-          <span style={{ fontWeight: 600, fontSize: "0.9375rem" }}>
-            Cortex Agent
-          </span>
-          <span
-            style={{
-              color: "var(--fg-muted)",
-              fontSize: "0.8125rem",
-              marginLeft: "auto",
-            }}
-          >
+          <span style={{ fontWeight: 600, fontSize: "0.9375rem" }}>Cortex Agent</span>
+          <span style={{ color: "var(--fg-muted)", fontSize: "0.8125rem", marginLeft: "auto" }}>
             powered by assistant-ui
           </span>
         </header>

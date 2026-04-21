@@ -11,6 +11,7 @@ import { PrismLight } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import type { FC } from "react";
 import type { ToolCallPart } from "./App";
+import { respondPermission } from "./App";
 
 PrismLight.registerLanguage("sql", sql);
 
@@ -150,6 +151,7 @@ const ToolCard: FC<{ part: ToolCallPart }> = ({ part }) => {
   const sqlText = isSql ? ((part.args as { sql?: string })?.sql ?? "") : null;
   const description = isSql ? (part.args as { description?: string })?.description : null;
   const rows = isSql ? parseResult(part.result) : null;
+  const perm = part.permission;
 
   return (
     <div style={{ borderBottom: "1px solid var(--border-subtle)", fontSize: "0.8125rem" }}>
@@ -160,7 +162,7 @@ const ToolCard: FC<{ part: ToolCallPart }> = ({ part }) => {
           alignItems: "center",
           gap: "0.5rem",
           padding: "0.5rem 0.875rem",
-          borderBottom: "1px solid var(--border-subtle)",
+          borderBottom: perm?.status === "pending" ? "none" : "1px solid var(--border-subtle)",
           background: "var(--bg-tool-header)",
           color: "var(--fg-muted)",
           fontWeight: 600,
@@ -172,106 +174,73 @@ const ToolCard: FC<{ part: ToolCallPart }> = ({ part }) => {
         <ToolIcon name={part.toolName} />
         {description ?? label}
 
-        {/* Permission badge */}
-        {part.permitted !== undefined && (
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "0.25rem",
-              padding: "0.125rem 0.5rem",
-              borderRadius: 99,
-              fontSize: "0.6875rem",
-              fontWeight: 500,
-              textTransform: "none",
-              letterSpacing: 0,
-              background: "rgba(29, 180, 100, 0.12)",
-              color: "var(--fg-success)",
-              border: "1px solid rgba(29, 180, 100, 0.25)",
-            }}
-          >
-            <CheckIcon /> allowed
-          </span>
-        )}
-
-        {/* Row count */}
-        {part.result && rows !== null && (
-          <span
-            style={{
-              marginLeft: "auto",
-              fontWeight: 400,
-              textTransform: "none",
-              letterSpacing: 0,
-              color: "var(--fg-success)",
-            }}
-          >
-            {rows} row{rows !== 1 ? "s" : ""}
-          </span>
-        )}
-
-        {/* Non-SQL done indicator */}
-        {part.result && rows === null && (
-          <span
-            style={{
-              marginLeft: "auto",
-              fontWeight: 400,
-              textTransform: "none",
-              letterSpacing: 0,
-              color: "var(--fg-success)",
-            }}
-          >
-            done
-          </span>
-        )}
-
-        {/* Pending spinner */}
-        {!part.result && (
-          <span
-            style={{
-              marginLeft: "auto",
-              fontWeight: 400,
-              textTransform: "none",
-              letterSpacing: 0,
-              color: "var(--fg-muted)",
-            }}
-          >
-            running…
-          </span>
-        )}
+        {/* Status badge — right-aligned */}
+        <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "0.375rem" }}>
+          {perm?.status === "allowed" && (
+            <StatusBadge color="green"><CheckIcon /> allowed</StatusBadge>
+          )}
+          {perm?.status === "denied" && (
+            <StatusBadge color="red"><DenyIcon /> denied</StatusBadge>
+          )}
+          {perm?.status !== "pending" && part.result && rows !== null && (
+            <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "var(--fg-success)" }}>
+              {rows} row{rows !== 1 ? "s" : ""}
+            </span>
+          )}
+          {perm?.status !== "pending" && part.result && rows === null && (
+            <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "var(--fg-success)" }}>
+              done
+            </span>
+          )}
+          {!perm && !part.result && (
+            <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "var(--fg-muted)" }}>
+              running…
+            </span>
+          )}
+        </span>
       </div>
 
-      {/* SQL code block */}
-      {isSql && sqlText && (
-        <SyntaxHighlighter
-          language="sql"
-          code={sqlText}
-          components={{
-            Pre: ({ children, ...p }) => <pre {...p} style={{ margin: 0 }}>{children}</pre>,
-            Code: ({ children, ...p }) => <code {...p}>{children}</code>,
-          }}
+      {/* Permission prompt — shown instead of content while pending */}
+      {perm?.status === "pending" && (
+        <PermissionPrompt
+          toolName={perm.toolName}
+          onAllow={() => respondPermission(perm.id, true)}
+          onDeny={() => respondPermission(perm.id, false)}
         />
       )}
 
-      {/* Non-SQL: show args as JSON */}
-      {!isSql && (
-        <pre
-          style={{
-            margin: 0,
-            padding: "0.5rem 0.875rem",
-            fontSize: "0.75rem",
-            fontFamily: "var(--font-mono)",
-            color: "var(--fg-muted)",
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-all",
-          }}
-        >
-          {JSON.stringify(part.args, null, 2)}
-        </pre>
-      )}
-
-      {/* Result table for SQL */}
-      {isSql && rows !== null && rows > 0 && part.result && (
-        <ResultTable raw={part.result} />
+      {/* Content — hidden until permission granted (or no permission needed) */}
+      {perm?.status !== "pending" && (
+        <>
+          {isSql && sqlText && (
+            <SyntaxHighlighter
+              language="sql"
+              code={sqlText}
+              components={{
+                Pre: ({ children, ...p }) => <pre {...p} style={{ margin: 0 }}>{children}</pre>,
+                Code: ({ children, ...p }) => <code {...p}>{children}</code>,
+              }}
+            />
+          )}
+          {!isSql && (
+            <pre
+              style={{
+                margin: 0,
+                padding: "0.5rem 0.875rem",
+                fontSize: "0.75rem",
+                fontFamily: "var(--font-mono)",
+                color: "var(--fg-muted)",
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-all",
+              }}
+            >
+              {JSON.stringify(part.args, null, 2)}
+            </pre>
+          )}
+          {isSql && rows !== null && rows > 0 && part.result && (
+            <ResultTable raw={part.result} />
+          )}
+        </>
       )}
     </div>
   );
@@ -385,6 +354,86 @@ const CheckIcon: FC = () => (
   <svg width="9" height="9" viewBox="0 0 12 12" fill="currentColor">
     <path d="M10.28 2.28L4.75 7.81 1.72 4.78a.75.75 0 0 0-1.06 1.06l3.5 3.5a.75.75 0 0 0 1.06 0l6-6a.75.75 0 0 0-1.06-1.06z" />
   </svg>
+);
+
+const DenyIcon: FC = () => (
+  <svg width="9" height="9" viewBox="0 0 12 12" fill="currentColor">
+    <path d="M1.47 1.47a.75.75 0 0 1 1.06 0L6 4.94l3.47-3.47a.75.75 0 1 1 1.06 1.06L7.06 6l3.47 3.47a.75.75 0 1 1-1.06 1.06L6 7.06 2.53 10.53a.75.75 0 0 1-1.06-1.06L4.94 6 1.47 2.53a.75.75 0 0 1 0-1.06z" />
+  </svg>
+);
+
+const StatusBadge: FC<{ color: "green" | "red"; children: React.ReactNode }> = ({ color, children }) => (
+  <span
+    style={{
+      display: "inline-flex",
+      alignItems: "center",
+      gap: "0.25rem",
+      padding: "0.125rem 0.5rem",
+      borderRadius: 99,
+      fontSize: "0.6875rem",
+      fontWeight: 500,
+      textTransform: "none",
+      letterSpacing: 0,
+      background: color === "green" ? "rgba(29, 180, 100, 0.12)" : "rgba(211, 19, 47, 0.1)",
+      color: color === "green" ? "var(--fg-success)" : "var(--sf-red-50)",
+      border: color === "green" ? "1px solid rgba(29, 180, 100, 0.25)" : "1px solid rgba(211, 19, 47, 0.2)",
+    }}
+  >
+    {children}
+  </span>
+);
+
+const PermissionPrompt: FC<{ toolName: string; onAllow: () => void; onDeny: () => void }> = ({
+  toolName,
+  onAllow,
+  onDeny,
+}) => (
+  <div
+    style={{
+      padding: "0.75rem 0.875rem",
+      borderTop: "1px solid var(--border-subtle)",
+      display: "flex",
+      alignItems: "center",
+      gap: "0.75rem",
+      background: "var(--bg-surface)",
+    }}
+  >
+    <span style={{ flex: 1, fontSize: "0.8125rem", color: "var(--fg-default)" }}>
+      Allow <strong>{toolName}</strong>?
+    </span>
+    <button
+      onClick={onDeny}
+      style={{
+        border: "1px solid var(--border-default)",
+        borderRadius: "var(--radius-sm)",
+        padding: "0.25rem 0.75rem",
+        fontSize: "0.8125rem",
+        fontWeight: 500,
+        cursor: "pointer",
+        background: "var(--bg-surface)",
+        color: "var(--fg-default)",
+        fontFamily: "inherit",
+      }}
+    >
+      Deny
+    </button>
+    <button
+      onClick={onAllow}
+      style={{
+        border: "none",
+        borderRadius: "var(--radius-sm)",
+        padding: "0.25rem 0.75rem",
+        fontSize: "0.8125rem",
+        fontWeight: 600,
+        cursor: "pointer",
+        background: "var(--bg-user)",
+        color: "var(--fg-on-brand)",
+        fontFamily: "inherit",
+      }}
+    >
+      Allow
+    </button>
+  </div>
 );
 
 const composerButton: React.CSSProperties = {

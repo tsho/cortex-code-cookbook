@@ -1,8 +1,25 @@
 import express from "express";
-import { query } from "@snowflake/cortex-code-agent-sdk";
+import { query, type PermissionResult } from "@snowflake/cortex-code-agent-sdk";
+import { randomUUID } from "node:crypto";
 
 const app = express();
 app.use(express.json());
+
+// Pending permission requests: id → resolve function
+const pendingPermissions = new Map<string, (result: PermissionResult) => void>();
+
+app.post("/api/permission/:id", (req, res) => {
+  const { id } = req.params;
+  const { allow } = req.body as { allow: boolean };
+  const resolve = pendingPermissions.get(id);
+  if (!resolve) {
+    res.status(404).json({ error: "permission request not found or already resolved" });
+    return;
+  }
+  pendingPermissions.delete(id);
+  resolve(allow ? { behavior: "allow" } : { behavior: "deny", message: "User denied" });
+  res.json({ ok: true });
+});
 
 app.post("/api/chat", async (req, res) => {
   const { prompt } = req.body as { prompt?: string };
@@ -30,8 +47,19 @@ app.post("/api/chat", async (req, res) => {
       abortController: abort,
       extraArgs: { "no-auto-update": null },
       canUseTool: async (toolName, input, context) => {
-        write({ type: "permission-check", toolName, input, toolUseId: context.toolUseID });
-        return { behavior: "allow" };
+        const id = randomUUID();
+        write({ type: "permission-request", id, toolName, input });
+
+        const result = await new Promise<PermissionResult>((resolve) => {
+          pendingPermissions.set(id, resolve);
+          context.signal.addEventListener("abort", () => {
+            pendingPermissions.delete(id);
+            resolve({ behavior: "deny", message: "aborted" });
+          });
+        });
+
+        write({ type: "permission-resolved", id, allowed: result.behavior === "allow" });
+        return result;
       },
     },
   });
